@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+android {
+    namespace = 'dev.zselog.bluetoothhid.plugin.tcp'
+    compileSdkVersion 36
+
+    defaultConfig {
+        applicationId "dev.zselog.bluetoothhid.plugin.tcp"
+        minSdk 28
+        targetSdk 36
+        versionCode 1
+        versionName "0.1"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+        compose true
+    }
+}
+
+dependencies {
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+
+    // Compose UI (same versions as the core app so the settings screen looks identical)
+    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.10.0'
+    implementation 'androidx.compose.ui:ui:1.10.6'
+    implementation 'androidx.compose.ui:ui-tooling-preview:1.10.6'
+    implementation 'androidx.compose.material3:material3:1.4.0'
+    implementation 'androidx.compose.material:material-icons-extended:1.7.8'
+    debugImplementation 'androidx.compose.ui:ui-tooling:1.10.6'
+}

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Required so the core app's permission-protected scan broadcast reaches us,
+         and so the core's discover() lists this plugin. -->
+    <uses-permission android:name="dev.fabik.bluetoothhid.permission.RECEIVE_SCANS" />
+
+    <!-- This plugin forwards scans over TCP -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Persistent TCP connection (server accept loop / client keep-alive) runs in a foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Lets us send the result broadcast back to the dev.fabik.bluetoothhid core app (explicit, Android 11+ visibility). -->
+    <queries>
+        <package android:name="dev.fabik.bluetoothhid" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@android:drawable/ic_dialog_info"
+        android:label="BT Scanner TCP Transport Plugin"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Settings entry-point opened by the core app on long-press in the plugin picker -->
+            <intent-filter>
+                <action android:name="dev.fabik.bluetoothhid.plugin.action.SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Receives scans from the core app. meta-data label is shown in the core's plugin picker.
+             No android:permission here: the core protects the send side, and requiring senders to
+             hold the permission would block the core (it declares but doesn't hold it). -->
+        <receiver
+            android:name=".ScanReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.fabik.bluetoothhid.action.BARCODE_SCANNED" />
+            </intent-filter>
+            <meta-data
+                android:name="dev.fabik.bluetoothhid.plugin.label"
+                android:value="TCP Transport Plugin" />
+            <meta-data
+                android:name="dev.fabik.bluetoothhid.plugin.author"
+                android:value="zselog (Marcin Golesz)" />
+        </receiver>
+
+        <service
+            android:name=".TcpService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+</manifest>
