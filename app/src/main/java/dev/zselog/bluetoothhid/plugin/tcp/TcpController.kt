@@ -60,8 +60,15 @@ class TcpController(private val context: Context) {
             "Hello from Android HID Barcode Scanner TCP plugin"
     }
 
-    private fun L(msg: String) = Log.i(TAG, msg)
-    private fun LE(msg: String, t: Throwable? = null) = Log.e(TAG, msg, t)
+    private fun L(msg: String) {
+        Log.i(TAG, msg)
+        EventLog.add(msg)
+    }
+
+    private fun LE(msg: String, t: Throwable? = null) {
+        Log.e(TAG, msg, t)
+        EventLog.add(if (t == null) msg else failureDetail(msg, t))
+    }
 
     private fun showReceivedMessage(message: String) {
         CoroutineScope(Dispatchers.Main).launch {
@@ -71,6 +78,11 @@ class TcpController(private val context: Context) {
 
     private fun sendWelcome(socket: Socket) {
         runCatching { socket.getOutputStream().apply { write(WELCOME_MESSAGE.toByteArray()); flush() } }
+    }
+
+    private fun failureDetail(prefix: String, throwable: Throwable): String {
+        val message = throwable.message
+        return if (message.isNullOrBlank()) "$prefix: ${throwable.javaClass.simpleName}" else "$prefix: $message"
     }
 
     private fun closeServerResources() {
@@ -88,7 +100,8 @@ class TcpController(private val context: Context) {
         isConnected = false
     }
 
-    private val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val controllerJob = SupervisorJob()
+    private val controllerScope = CoroutineScope(controllerJob + Dispatchers.IO)
     private val sendMutex = Mutex()
 
     private val connectedClients = CopyOnWriteArrayList<Socket>()
@@ -324,6 +337,7 @@ class TcpController(private val context: Context) {
         serverPort = null
         clientTarget = null
         notifyState()
+        controllerJob.cancel()
         L("TCP controller stopped")
     }
 
@@ -348,7 +362,7 @@ class TcpController(private val context: Context) {
         }
     }
 
-    fun sendProcessedData(processedString: String) {
+    fun sendProcessedData(processedString: String, onResult: (Boolean, String) -> Unit) {
         controllerScope.launch {
             sendMutex.withLock {
                 val data = processedString.toByteArray(Charsets.UTF_8)
@@ -358,6 +372,7 @@ class TcpController(private val context: Context) {
                     val recipients = connectedClients.toList()
                     if (recipients.isEmpty()) {
                         L("TCP server: no clients connected — data dropped")
+                        onResult(false, "no TCP clients connected")
                         return@withLock
                     }
                     var delivered = 0
@@ -375,6 +390,11 @@ class TcpController(private val context: Context) {
                         }
                     }
                     L("TCP broadcast to $delivered/${recipients.size} client(s): $processedString")
+                    onResult(
+                        delivered > 0,
+                        if (delivered > 0) "forwarded to $delivered/${recipients.size} TCP client(s)"
+                        else "TCP broadcast failed for all ${recipients.size} client(s)"
+                    )
                     return@withLock
                 }
 
@@ -395,9 +415,15 @@ class TcpController(private val context: Context) {
                             out.write(data)
                             out.flush()
                             L("TCP sent after reconnect: $processedString")
-                        }.onFailure { LE("TCP retry send failed", it) }
+                        }.onSuccess {
+                            onResult(true, "forwarded over TCP after reconnect")
+                        }.onFailure {
+                            LE("TCP retry send failed", it)
+                            onResult(false, failureDetail("TCP retry send failed", it))
+                        }
                     } else {
                         L("TCP reconnect didn't establish in time — data dropped")
+                        onResult(false, "TCP reconnect did not establish in time")
                     }
                     return@withLock
                 }
@@ -407,9 +433,12 @@ class TcpController(private val context: Context) {
                     out.write(data)
                     out.flush()
                     L("TCP sent: $processedString")
+                }.onSuccess {
+                    onResult(true, "forwarded over TCP")
                 }.onFailure { e ->
                     LE("TCP send failed", e)
                     restartClient()
+                    onResult(false, failureDetail("TCP send failed", e))
                 }
             }
         }

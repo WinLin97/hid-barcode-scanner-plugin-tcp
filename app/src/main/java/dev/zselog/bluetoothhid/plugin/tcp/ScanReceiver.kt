@@ -30,6 +30,7 @@ class ScanReceiver : BroadcastReceiver() {
             ?: return
         Log.i(TAG, "Received scan $scanId: '$value' — forwarding to TcpService")
 
+        EventLog.add("Scan received: $value")
         TcpService.send(context, value, scanId)
     }
 }

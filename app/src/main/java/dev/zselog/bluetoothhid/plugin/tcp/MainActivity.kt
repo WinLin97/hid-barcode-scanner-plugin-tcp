@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Stop
@@ -46,6 +47,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -86,6 +88,7 @@ private fun SettingsScreen() {
     var serverPort by remember { mutableStateOf(TcpConfig.getServerPort(context).toString()) }
     var maxClients by remember { mutableStateOf(TcpConfig.getMaxClients(context).toString()) }
     var idleTimeout by remember { mutableStateOf(TcpConfig.getIdleTimeoutMs(context).toString()) }
+    val logEntries by EventLog.entries.collectAsState()
 
     Scaffold(topBar = { TopAppBar(title = { Text("TCP Transport Plugin") }) }) { padding ->
         Column(
@@ -142,7 +145,9 @@ private fun SettingsScreen() {
                         maxClients = maxClients.toIntOrNull() ?: TcpConfig.DEFAULT_MAX_CLIENTS,
                         idleTimeoutMs = idleTimeout.toIntOrNull() ?: TcpConfig.DEFAULT_IDLE_TIMEOUT_MS,
                     )
-                    Toast.makeText(context, "Saved — restart to apply", Toast.LENGTH_SHORT).show()
+                    EventLog.add("Settings saved: ${mode.name.lowercase()}")
+                    TcpService.restart(context)
+                    Toast.makeText(context, "Saved and restarted", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -161,6 +166,22 @@ private fun SettingsScreen() {
                     Icon(Icons.Default.Stop, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Stop")
+                }
+            }
+
+            SectionTitle("Event log")
+            OutlinedButton(onClick = { EventLog.clear() }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Delete, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Clear log")
+            }
+            if (logEntries.isEmpty()) {
+                Text("No events yet", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    logEntries.forEach { entry ->
+                        Text(entry, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
 

@@ -23,12 +23,16 @@ class TcpService : Service() {
 
         const val ACTION_START = "dev.zselog.bluetoothhid.plugin.tcp.START"
         const val ACTION_STOP = "dev.zselog.bluetoothhid.plugin.tcp.STOP"
+        const val ACTION_RESTART = "dev.zselog.bluetoothhid.plugin.tcp.RESTART"
         const val ACTION_SEND = "dev.zselog.bluetoothhid.plugin.tcp.SEND"
         const val EXTRA_VALUE = "value"
         const val EXTRA_SCAN_ID = "scan_id"
 
         fun start(ctx: Context) =
             ctx.startForegroundService(Intent(ctx, TcpService::class.java).setAction(ACTION_START))
+
+        fun restart(ctx: Context) =
+            ctx.startForegroundService(Intent(ctx, TcpService::class.java).setAction(ACTION_RESTART))
 
         fun stop(ctx: Context) =
             ctx.startService(Intent(ctx, TcpService::class.java).setAction(ACTION_STOP))
@@ -50,21 +54,33 @@ class TcpService : Service() {
         startForeground(NOTIF_ID, buildNotification(statusText()))
 
         when (intent?.action) {
-            ACTION_START -> ensureStarted()
+            ACTION_START -> {
+                EventLog.add("Service start requested")
+                ensureStarted()
+            }
+            ACTION_RESTART -> {
+                EventLog.add("Service restart requested")
+                restartWithCurrentConfig()
+            }
 
             ACTION_SEND -> {
                 ensureStarted()
                 val value = intent.getStringExtra(EXTRA_VALUE)
                 val scanId = intent.getStringExtra(EXTRA_SCAN_ID)
                 if (value != null) {
-                    controller?.sendProcessedData(value)
-                    // The controller delivers/retries internally and doesn't report per-send
-                    // success synchronously, so we optimistically report "forwarded".
-                    ResultReporter.report(this, scanId, ok = true, detail = "forwarded over TCP")
+                    EventLog.add("Sending scan over TCP: $value")
+                    controller?.sendProcessedData(value) { ok, detail ->
+                        EventLog.add("Send result: ${if (ok) "ok" else "failed"} - $detail")
+                        ResultReporter.report(this, scanId, ok = ok, detail = detail)
+                    } ?: run {
+                        EventLog.add("Send result: failed - TCP controller not available")
+                        ResultReporter.report(this, scanId, ok = false, detail = "TCP controller not available")
+                    }
                 }
             }
 
             ACTION_STOP -> {
+                EventLog.add("Service stop requested")
                 controller?.stop()
                 controller = null
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -72,6 +88,12 @@ class TcpService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    private fun restartWithCurrentConfig() {
+        controller?.stop()
+        controller = TcpController(applicationContext)
+        ensureStarted()
     }
 
     private fun ensureStarted() {
