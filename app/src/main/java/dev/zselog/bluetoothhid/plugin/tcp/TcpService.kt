@@ -71,22 +71,47 @@ class TcpService : Service() {
             lastCoreContactMs = System.currentTimeMillis()
         }
 
-        fun start(ctx: Context) =
-            ctx.startForegroundService(Intent(ctx, TcpService::class.java).setAction(ACTION_START))
+        /**
+         * Starts the service, swallowing the OS's background-start denials
+         * ([android.app.ForegroundServiceStartNotAllowedException] /
+         * [android.app.BackgroundServiceStartNotAllowedException]). These fire when a broadcast
+         * receiver tries to (re)start the service while the app is in the background and the OS
+         * didn't grant a start window (common on Android 12+, and aggressively on OEMs like MIUI
+         * without "Autostart"). Letting them propagate crashes the receiver, which gets the whole
+         * app flagged as a "bad process" and backed off — so a single blocked start would stop the
+         * plugin from ever being revived. Returns true if the start was accepted.
+         */
+        private fun safelyStart(ctx: Context, intent: Intent, foreground: Boolean): Boolean =
+            runCatching {
+                if (foreground) ctx.startForegroundService(intent) else ctx.startService(intent)
+            }.onFailure { e ->
+                Log.w(TAG, "Service start blocked (background/OEM restriction): ${e.message}")
+                EventLog.add("Couldn't start transport in background — allow Autostart / disable battery optimisation for this app")
+            }.isSuccess
 
-        fun restart(ctx: Context) =
-            ctx.startForegroundService(Intent(ctx, TcpService::class.java).setAction(ACTION_RESTART))
+        fun start(ctx: Context) {
+            val ok = safelyStart(ctx, Intent(ctx, TcpService::class.java).setAction(ACTION_START), foreground = true)
+            // Tell the core we're down so its UI reflects reality instead of waiting forever.
+            if (!ok) ResultReporter.reportStatus(ctx, running = false, detail = "start blocked by OS")
+        }
 
-        fun stop(ctx: Context) =
-            ctx.startService(Intent(ctx, TcpService::class.java).setAction(ACTION_STOP))
+        fun restart(ctx: Context) {
+            safelyStart(ctx, Intent(ctx, TcpService::class.java).setAction(ACTION_RESTART), foreground = true)
+        }
 
-        fun send(ctx: Context, value: String, scanId: String?) =
-            ctx.startForegroundService(
-                Intent(ctx, TcpService::class.java)
-                    .setAction(ACTION_SEND)
-                    .putExtra(EXTRA_VALUE, value)
-                    .putExtra(EXTRA_SCAN_ID, scanId)
-            )
+        fun stop(ctx: Context) {
+            safelyStart(ctx, Intent(ctx, TcpService::class.java).setAction(ACTION_STOP), foreground = false)
+        }
+
+        fun send(ctx: Context, value: String, scanId: String?) {
+            val intent = Intent(ctx, TcpService::class.java)
+                .setAction(ACTION_SEND)
+                .putExtra(EXTRA_VALUE, value)
+                .putExtra(EXTRA_SCAN_ID, scanId)
+            val ok = safelyStart(ctx, intent, foreground = true)
+            // A scan we couldn't even hand to the service is a failed delivery — report it back.
+            if (!ok) ResultReporter.report(ctx, scanId, ok = false, detail = "delivery blocked by OS (background)")
+        }
     }
 
     private var controller: TcpController? = null
@@ -174,7 +199,13 @@ class TcpService : Service() {
             c.isListening() -> " (waiting)"
             else -> ""
         }
-        _status.value = TransportStatus(running = c != null, connected = connected, summary = summary)
+        val next = TransportStatus(running = c != null, connected = connected, summary = summary)
+        if (next == _status.value) return // unchanged — don't spam the core
+        _status.value = next
+        // Proactively announce the change to the core so its UI/health reflects start/connect/stop
+        // within ms instead of waiting for the next liveness ping (also acts as a SET_ENABLED ack).
+        // The ping path stays an explicit reply (see PluginControlReceiver); this is in addition.
+        ResultReporter.reportStatus(this, running = next.running, detail = next.summary)
     }
 
     /** Get-or-create the controller, wiring it to push live status updates on connection changes. */

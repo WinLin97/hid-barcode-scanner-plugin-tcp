@@ -8,13 +8,9 @@ kotlin {
     jvmToolchain(21)
 }
 
-// ── Single source of truth for the app version ──────────────────────────────
-// versionName comes from -PversionName when provided (the release CI passes the git
-// tag minus its leading "v"), otherwise this local default is used for dev builds.
-// An optional "-suffix" (e.g. "0.0.1-alpha") is allowed. versionCode (the integer the
-// system compares) is derived from the numeric "x.y.z" prefix only — each part < 100.
-// Because the tag drives versionName in CI, the tag and the version can never drift.
-def appVersionName = (project.findProperty('versionName') ?: "0.0.2-alpha").toString()
+// versionName: -PversionName if set (CI passes the git tag without "v"), else this dev default.
+// versionCode is derived from the numeric x.y.z prefix (each part < 100).
+def appVersionName = (project.findProperty('versionName') ?: "0.0.3-alpha").toString()
 def appVersionCode = appVersionName.split('-')[0]
         .tokenize('.').inject(0) { acc, part -> acc * 100 + (part as int) }
 
@@ -32,8 +28,7 @@ android {
 
     buildTypes {
         release {
-            // R8 full mode: shrink + optimize + obfuscate code, and strip unused resources
-            // (notably the bulk of material-icons-extended). Same setup as the core app.
+            // R8: shrink + obfuscate code and strip unused resources. Matches the core app.
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -50,7 +45,7 @@ android {
 dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
 
-    // Compose UI (same versions as the core app so the settings screen looks identical)
+    // Compose UI — versions matched to the core app
     implementation 'androidx.activity:activity-compose:1.13.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.10.0'
     implementation 'androidx.compose.ui:ui:1.10.6'
