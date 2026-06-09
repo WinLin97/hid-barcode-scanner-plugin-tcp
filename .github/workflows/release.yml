@@ -33,15 +33,20 @@ jobs:
       # No ABI splits / AAB: the plugin has no native code, so one universal APK is enough.
       # versionName is taken from the tag (e.g. tag "v0.0.3" -> versionName "0.0.3"), so the
       # released APK's version can never drift from the tag.
+      # Secrets are passed via env vars and quoted, so special characters in the keystore
+      # password/alias can never break the shell command.
       - name: Build signed release APK
+        env:
+          KEYSTORE_PW: ${{ secrets.KEYSTORE_PW }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
         run: |
           VERSION_NAME="${GITHUB_REF_NAME#v}"
           ./gradlew assembleRelease --no-daemon --stacktrace \
             -PversionName="$VERSION_NAME" \
-            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
-            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PW }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEYSTORE_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEYSTORE_PW }}
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/signing-key.jks" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PW" \
+            -Pandroid.injected.signing.key.alias="$KEYSTORE_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEYSTORE_PW"
 
       - name: Remove keystore file
         run: rm $GITHUB_WORKSPACE/signing-key.jks
