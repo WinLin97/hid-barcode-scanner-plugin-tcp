@@ -24,6 +24,9 @@ class ScanReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_BARCODE_SCANNED) return
 
+        // A scan is proof the core is alive — keep the service's watchdog satisfied.
+        TcpService.noteCoreContact()
+
         val scanId = intent.getStringExtra(EXTRA_SCAN_ID)
         val value = intent.getStringExtra(EXTRA_PROCESSED_VALUE)
             ?: intent.getStringExtra(EXTRA_RAW_VALUE)

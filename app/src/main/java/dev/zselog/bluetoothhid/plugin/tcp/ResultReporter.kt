@@ -14,6 +14,11 @@ object ResultReporter {
     const val EXTRA_RESULT_OK = "result_ok"
     const val EXTRA_RESULT_DETAIL = "result_detail"
 
+    const val ACTION_PLUGIN_STATUS = "dev.fabik.bluetoothhid.plugin.action.STATUS"
+    const val EXTRA_PACKAGE = "package"
+    const val EXTRA_RUNNING = "running"
+    const val EXTRA_STATUS_DETAIL = "status_detail"
+
     fun report(ctx: Context, scanId: String?, ok: Boolean, detail: String) {
         val intent = Intent(ACTION_SEND_RESULT).apply {
             setPackage(CORE_PACKAGE)
@@ -23,5 +28,17 @@ object ResultReporter {
         }
         runCatching { ctx.sendBroadcast(intent) }
             .onFailure { Log.e(TAG, "Failed to report result back to core", it) }
+    }
+
+    /** Answers the core's liveness ping (ACTION_PLUGIN_PING) with our current transport state. */
+    fun reportStatus(ctx: Context, running: Boolean, detail: String?) {
+        val intent = Intent(ACTION_PLUGIN_STATUS).apply {
+            setPackage(CORE_PACKAGE)
+            putExtra(EXTRA_PACKAGE, ctx.packageName)
+            putExtra(EXTRA_RUNNING, running)
+            putExtra(EXTRA_STATUS_DETAIL, detail)
+        }
+        runCatching { ctx.sendBroadcast(intent) }
+            .onFailure { Log.e(TAG, "Failed to report status back to core", it) }
     }
 }

@@ -52,7 +52,18 @@
                 android:value="TCP Transport Plugin" />
             <meta-data
                 android:name="dev.fabik.bluetoothhid.plugin.author"
-                android:value="zselog (Marcin Golesz)" />
+                android:value="zselog" />
+        </receiver>
+
+        <!-- Lifecycle + health channel from the core (warm up / release / liveness ping).
+             No android:permission: the core protects the send side, same as ScanReceiver. -->
+        <receiver
+            android:name=".PluginControlReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.fabik.bluetoothhid.plugin.action.SET_ENABLED" />
+                <action android:name="dev.fabik.bluetoothhid.plugin.action.PING" />
+            </intent-filter>
         </receiver>
 
         <service

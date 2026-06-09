@@ -128,6 +128,9 @@ class TcpController(private val context: Context) {
         return (serverJob?.isActive == true && isServerStarted) || clientJob?.isActive == true
     }
 
+    /** True once a peer is actually connected (client socket up, or ≥1 client on the server). */
+    fun isConnected(): Boolean = isConnected
+
     private fun notifyState() {
         val data = when {
             isServerStarted -> serverPort?.let { port ->

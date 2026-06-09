@@ -8,6 +8,16 @@ kotlin {
     jvmToolchain(21)
 }
 
+// ── Single source of truth for the app version ──────────────────────────────
+// versionName comes from -PversionName when provided (the release CI passes the git
+// tag minus its leading "v"), otherwise this local default is used for dev builds.
+// An optional "-suffix" (e.g. "0.0.1-alpha") is allowed. versionCode (the integer the
+// system compares) is derived from the numeric "x.y.z" prefix only — each part < 100.
+// Because the tag drives versionName in CI, the tag and the version can never drift.
+def appVersionName = (project.findProperty('versionName') ?: "0.0.2-alpha").toString()
+def appVersionCode = appVersionName.split('-')[0]
+        .tokenize('.').inject(0) { acc, part -> acc * 100 + (part as int) }
+
 android {
     namespace = 'dev.zselog.bluetoothhid.plugin.tcp'
     compileSdkVersion 36
@@ -16,13 +26,17 @@ android {
         applicationId "dev.zselog.bluetoothhid.plugin.tcp"
         minSdk 28
         targetSdk 36
-        versionCode 1
-        versionName "0.0.1"
+        versionCode appVersionCode
+        versionName appVersionName
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            // R8 full mode: shrink + optimize + obfuscate code, and strip unused resources
+            // (notably the bulk of material-icons-extended). Same setup as the core app.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
         }
     }
