@@ -39,11 +39,15 @@
         </activity>
 
         <!-- Receives scans from the core app. meta-data label is shown in the core's plugin picker.
-             No android:permission here: the core protects the send side, and requiring senders to
-             hold the permission would block the core (it declares but doesn't hold it). -->
+             android:permission restricts senders to apps that hold RECEIVE_SCANS. The core
+             declares this permission and therefore automatically holds it, so it can send.
+             Other apps must explicitly request it — random apps cannot send fake scans.
+             Note: if the core is reinstalled, the plugin must be reinstalled too to restore
+             the RECEIVE_SCANS grant (standard Android custom-permission limitation). -->
         <receiver
             android:name=".ScanReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:permission="dev.fabik.bluetoothhid.permission.RECEIVE_SCANS">
             <intent-filter>
                 <action android:name="dev.fabik.bluetoothhid.action.BARCODE_SCANNED" />
             </intent-filter>
@@ -56,10 +60,11 @@
         </receiver>
 
         <!-- Lifecycle + health channel from the core (warm up / release / liveness ping).
-             No android:permission: the core protects the send side, same as ScanReceiver. -->
+             Same permission restriction as ScanReceiver — only RECEIVE_SCANS holders can send. -->
         <receiver
             android:name=".PluginControlReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:permission="dev.fabik.bluetoothhid.permission.RECEIVE_SCANS">
             <intent-filter>
                 <action android:name="dev.fabik.bluetoothhid.plugin.action.SET_ENABLED" />
                 <action android:name="dev.fabik.bluetoothhid.plugin.action.PING" />

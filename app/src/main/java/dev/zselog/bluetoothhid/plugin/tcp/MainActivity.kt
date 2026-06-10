@@ -186,6 +186,10 @@ private fun TransportTab() {
     var maxClients by remember { mutableStateOf(TcpConfig.getMaxClients(context).toString()) }
     var idleTimeout by remember { mutableStateOf(TcpConfig.getIdleTimeoutMs(context).toString()) }
 
+    val clientPortValid = clientPort.toIntOrNull()?.let { it in 1..65535 } ?: false
+    val serverPortValid = serverPort.toIntOrNull()?.let { it in 1..65535 } ?: false
+    val hasPortError = if (mode == TcpConfig.Mode.CLIENT) !clientPortValid else !serverPortValid
+
     // Persist whatever the form currently shows. Both Save and Start go through this so the visible
     // form is always the single source of truth — no "changed mode but service still on the old one".
     fun persistForm() = TcpConfig.save(
@@ -233,11 +237,19 @@ private fun TransportTab() {
         if (mode == TcpConfig.Mode.CLIENT) {
             SectionTitle("Client (connect to a server)")
             Field(host, { host = it }, "Host", numeric = false)
-            Field(clientPort, { clientPort = it }, "Client port")
+            Field(
+                clientPort, { clientPort = it }, "Client port",
+                isError = !clientPortValid,
+                errorText = if (!clientPortValid) "Port must be 1–65535" else null,
+            )
             Field(connectTimeout, { connectTimeout = it }, "Connect timeout (ms)")
         } else {
             SectionTitle("Server (listen for clients)")
-            Field(serverPort, { serverPort = it }, "Server port")
+            Field(
+                serverPort, { serverPort = it }, "Server port",
+                isError = !serverPortValid,
+                errorText = if (!serverPortValid) "Port must be 1–65535" else null,
+            )
             Field(maxClients, { maxClients = it }, "Max clients")
             Field(idleTimeout, { idleTimeout = it }, "Client idle timeout (ms, 0 = off)")
         }
@@ -250,6 +262,7 @@ private fun TransportTab() {
                 TcpService.restart(context)
                 Toast.makeText(context, "Saved and restarted", Toast.LENGTH_SHORT).show()
             },
+            enabled = !hasPortError,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.Save, null)
@@ -339,12 +352,21 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun Field(value: String, onChange: (String) -> Unit, label: String, numeric: Boolean = true) {
+private fun Field(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    numeric: Boolean = true,
+    isError: Boolean = false,
+    errorText: String? = null,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         singleLine = true,
+        isError = isError,
+        supportingText = if (isError && errorText != null) ({ Text(errorText) }) else null,
         keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number)
         else KeyboardOptions.Default,
         modifier = Modifier.fillMaxWidth()

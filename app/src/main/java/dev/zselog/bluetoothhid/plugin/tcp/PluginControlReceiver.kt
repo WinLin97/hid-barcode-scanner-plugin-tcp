@@ -26,30 +26,34 @@ class PluginControlReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        // Any lifecycle/health message proves the core is alive — feed the service watchdog.
-        TcpService.noteCoreContact()
+        try {
+            // Any lifecycle/health message proves the core is alive — feed the service watchdog.
+            TcpService.noteCoreContact()
 
-        when (intent.action) {
-            ACTION_SET_ENABLED -> {
-                val enabled = intent.getBooleanExtra(EXTRA_ENABLED, false)
-                Log.i(TAG, "Core set enabled=$enabled")
-                if (enabled) {
-                    EventLog.add("Core enabled plugin — starting transport")
-                    TcpService.start(context)
-                } else {
-                    EventLog.add("Core disabled plugin — stopping transport")
-                    TcpService.stop(context)
+            when (intent.action) {
+                ACTION_SET_ENABLED -> {
+                    val enabled = intent.getBooleanExtra(EXTRA_ENABLED, false)
+                    Log.i(TAG, "Core set enabled=$enabled")
+                    if (enabled) {
+                        EventLog.add("Core enabled plugin — starting transport")
+                        TcpService.start(context)
+                    } else {
+                        EventLog.add("Core disabled plugin — stopping transport")
+                        TcpService.stop(context)
+                    }
+                }
+
+                ACTION_PING -> {
+                    Log.i(TAG, "Core ping — running=${TcpService.isRunning}")
+                    ResultReporter.reportStatus(
+                        context,
+                        running = TcpService.isRunning,
+                        detail = TcpService.statusSummary
+                    )
                 }
             }
-
-            ACTION_PING -> {
-                Log.i(TAG, "Core ping — running=${TcpService.isRunning}")
-                ResultReporter.reportStatus(
-                    context,
-                    running = TcpService.isRunning,
-                    detail = TcpService.statusSummary
-                )
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Unhandled error in plugin control receiver", e)
         }
     }
 }

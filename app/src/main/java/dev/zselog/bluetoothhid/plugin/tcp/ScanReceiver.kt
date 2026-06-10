@@ -23,17 +23,20 @@ class ScanReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_BARCODE_SCANNED) return
+        try {
+            // A scan is proof the core is alive — keep the service's watchdog satisfied.
+            TcpService.noteCoreContact()
 
-        // A scan is proof the core is alive — keep the service's watchdog satisfied.
-        TcpService.noteCoreContact()
+            val scanId = intent.getStringExtra(EXTRA_SCAN_ID)
+            val value = intent.getStringExtra(EXTRA_PROCESSED_VALUE)
+                ?: intent.getStringExtra(EXTRA_RAW_VALUE)
+                ?: return
+            Log.i(TAG, "Received scan $scanId: '$value' — forwarding to TcpService")
 
-        val scanId = intent.getStringExtra(EXTRA_SCAN_ID)
-        val value = intent.getStringExtra(EXTRA_PROCESSED_VALUE)
-            ?: intent.getStringExtra(EXTRA_RAW_VALUE)
-            ?: return
-        Log.i(TAG, "Received scan $scanId: '$value' — forwarding to TcpService")
-
-        EventLog.add("Scan received: $value")
-        TcpService.send(context, value, scanId)
+            EventLog.add("Scan received: $value")
+            TcpService.send(context, value, scanId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Unhandled error in scan receiver — dropping scan", e)
+        }
     }
 }

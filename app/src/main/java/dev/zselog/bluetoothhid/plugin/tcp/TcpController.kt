@@ -105,7 +105,7 @@ class TcpController(private val context: Context) {
     private val sendMutex = Mutex()
 
     private val connectedClients = CopyOnWriteArrayList<Socket>()
-    private var activeSocket: Socket? = null
+    @Volatile private var activeSocket: Socket? = null
     @Volatile private var isConnected: Boolean = false
 
     private var serverSocket: ServerSocket? = null
@@ -184,7 +184,7 @@ class TcpController(private val context: Context) {
                     }
 
                     val socket = serverSocket?.accept() ?: continue
-                    val clientAddr = socket.inetAddress.hostAddress ?: socket.inetAddress.toString()
+                    val clientAddr = socket.inetAddress?.hostAddress ?: socket.inetAddress?.toString() ?: "unknown"
 
                     if (connectedClients.size >= maxClients) {
                         L("TCP max clients ($maxClients) reached, rejecting $clientAddr")
@@ -206,7 +206,7 @@ class TcpController(private val context: Context) {
                     LE("TCP server error (attempt $errorCount)", e)
                     closeServerResources()
                     notifyState()
-                    val backoff = minOf(250L * errorCount, 5000L) + Random.nextLong(0, 200)
+                    val backoff = minOf(250L * errorCount, 30_000L) + Random.nextLong(0, 1000)
                     delay(backoff)
                 }
             }
@@ -292,7 +292,7 @@ class TcpController(private val context: Context) {
                 } catch (e: IOException) {
                     errorCount++
                     LE("TCP client connect error (attempt $errorCount)", e)
-                    val backoff = minOf(250L * errorCount, 5000L) + Random.nextLong(0, 200)
+                    val backoff = minOf(250L * errorCount, 30_000L) + Random.nextLong(0, 1000)
                     delay(backoff)
                 } finally {
                     isConnected = false
@@ -385,7 +385,7 @@ class TcpController(private val context: Context) {
                             out.write(data)
                             out.flush()
                         }.onSuccess { delivered++ }.onFailure { e ->
-                            LE("TCP broadcast send failed to ${socket.inetAddress.hostAddress ?: socket.inetAddress}", e)
+                            LE("TCP broadcast send failed to ${socket.inetAddress?.hostAddress ?: socket.inetAddress?.toString() ?: "unknown"}", e)
                             runCatching { socket.close() }
                             connectedClients.remove(socket)
                             isConnected = connectedClients.isNotEmpty()
@@ -407,7 +407,7 @@ class TcpController(private val context: Context) {
                     L("TCP client: no active connection — triggering reconnect")
                     restartClient()
                     val connectTimeoutMs = TcpConfig.getConnectTimeoutMs(context).coerceIn(500, 30_000)
-                    val deadline = System.currentTimeMillis() + connectTimeoutMs + 300
+                    val deadline = System.currentTimeMillis() + connectTimeoutMs + 1000L
                     while (!isConnected && isActive && System.currentTimeMillis() < deadline) {
                         delay(50)
                     }

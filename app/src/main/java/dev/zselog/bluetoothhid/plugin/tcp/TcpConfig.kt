@@ -32,7 +32,7 @@ object TcpConfig {
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun getMode(ctx: Context): Mode =
-        runCatching { Mode.valueOf(prefs(ctx).getString(KEY_MODE, Mode.CLIENT.name)!!) }
+        runCatching { Mode.valueOf(prefs(ctx).getString(KEY_MODE, Mode.CLIENT.name) ?: Mode.CLIENT.name) }
             .getOrDefault(Mode.CLIENT)
 
     // Client
