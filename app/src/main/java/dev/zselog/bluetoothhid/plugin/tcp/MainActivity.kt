@@ -77,6 +77,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -185,7 +186,7 @@ private fun SettingsScreen(
             // theme change resets that animation state so the bar recolors in the same frame.
             key(dark, dynamic) {
                 TopAppBar(
-                    title = { Text("TCP Transport Plugin") },
+                    title = { Text(stringResource(R.string.screen_title)) },
                     actions = { ThemeMenu(dark, dynamic, onToggleDark, onToggleDynamic) }
                 )
             }
@@ -193,7 +194,10 @@ private fun SettingsScreen(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             TabRow(selectedTabIndex = pagerState.currentPage) {
-                listOf("Transport", "Event log").forEachIndexed { index, title ->
+                listOf(
+                    stringResource(R.string.tab_transport),
+                    stringResource(R.string.tab_event_log),
+                ).forEachIndexed { index, title ->
                     Tab(
                         selected = pagerState.currentPage == index,
                         onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
@@ -226,14 +230,14 @@ private fun ThemeMenu(
 ) {
     var expanded by remember { mutableStateOf(false) }
     IconButton(onClick = { expanded = true }) {
-        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu))
     }
     // Dismiss BEFORE toggling: the popup is its own window and repaints a frame later than the
     // app window, so changing the theme with it open makes the top of the screen visibly flash
     // twice. Closing first leaves a single, clean recolor (and matches stock menu behaviour).
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
         DropdownMenuItem(
-            text = { Text("Dark theme") },
+            text = { Text(stringResource(R.string.dark_theme)) },
             trailingIcon = { Checkbox(checked = dark, onCheckedChange = null) },
             onClick = {
                 expanded = false
@@ -242,7 +246,7 @@ private fun ThemeMenu(
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             DropdownMenuItem(
-                text = { Text("Dynamic theme") },
+                text = { Text(stringResource(R.string.dynamic_theme)) },
                 trailingIcon = { Checkbox(checked = dynamic, onCheckedChange = null) },
                 onClick = {
                     expanded = false
@@ -294,60 +298,61 @@ private fun TransportTab() {
         LiveStatusCard()
 
         Text(
-            "Scans from the HID Barcode Scanner are forwarded over TCP. Enable this plugin in " +
-                "the scanner: Settings → Connection → External → toggle it on.",
+            stringResource(R.string.intro),
             style = MaterialTheme.typography.bodyMedium
         )
 
-        SectionTitle("Mode")
+        SectionTitle(stringResource(R.string.mode))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             SegmentedButton(
                 selected = mode == TcpConfig.Mode.CLIENT,
                 onClick = { mode = TcpConfig.Mode.CLIENT },
                 shape = SegmentedButtonDefaults.itemShape(0, 2)
-            ) { Text("Client") }
+            ) { Text(stringResource(R.string.mode_client)) }
             SegmentedButton(
                 selected = mode == TcpConfig.Mode.SERVER,
                 onClick = { mode = TcpConfig.Mode.SERVER },
                 shape = SegmentedButtonDefaults.itemShape(1, 2)
-            ) { Text("Server") }
+            ) { Text(stringResource(R.string.mode_server)) }
         }
 
         // Show only the fields relevant to the selected mode
+        val portError = stringResource(R.string.port_range_error)
         if (mode == TcpConfig.Mode.CLIENT) {
-            SectionTitle("Client (connect to a server)")
-            Field(host, { host = it }, "Host", numeric = false)
+            SectionTitle(stringResource(R.string.section_client))
+            Field(host, { host = it }, stringResource(R.string.host), numeric = false)
             Field(
-                clientPort, { clientPort = it }, "Client port",
+                clientPort, { clientPort = it }, stringResource(R.string.client_port),
                 isError = !clientPortValid,
-                errorText = if (!clientPortValid) "Port must be 1–65535" else null,
+                errorText = if (!clientPortValid) portError else null,
             )
-            Field(connectTimeout, { connectTimeout = it }, "Connect timeout (ms)")
+            Field(connectTimeout, { connectTimeout = it }, stringResource(R.string.connect_timeout))
         } else {
-            SectionTitle("Server (listen for clients)")
+            SectionTitle(stringResource(R.string.section_server))
             Field(
-                serverPort, { serverPort = it }, "Server port",
+                serverPort, { serverPort = it }, stringResource(R.string.server_port),
                 isError = !serverPortValid,
-                errorText = if (!serverPortValid) "Port must be 1–65535" else null,
+                errorText = if (!serverPortValid) portError else null,
             )
-            Field(maxClients, { maxClients = it }, "Max clients")
-            Field(idleTimeout, { idleTimeout = it }, "Client idle timeout (ms, 0 = off)")
+            Field(maxClients, { maxClients = it }, stringResource(R.string.max_clients))
+            Field(idleTimeout, { idleTimeout = it }, stringResource(R.string.idle_timeout))
         }
 
         Spacer(Modifier.height(4.dp))
+        val savedToast = stringResource(R.string.saved_and_restarted)
         Button(
             onClick = {
                 persistForm()
                 EventLog.add("Settings saved: ${mode.name.lowercase()}")
                 TcpService.restart(context)
-                Toast.makeText(context, "Saved and restarted", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, savedToast, Toast.LENGTH_SHORT).show()
             },
             enabled = !hasPortError,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.Save, null)
             Spacer(Modifier.width(8.dp))
-            Text("Save settings")
+            Text(stringResource(R.string.save_settings))
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -361,19 +366,22 @@ private fun TransportTab() {
             ) {
                 Icon(Icons.Default.PlayArrow, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Start")
+                Text(stringResource(R.string.start))
             }
             OutlinedButton(onClick = { TcpService.stop(context) }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Default.Stop, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Stop")
+                Text(stringResource(R.string.stop))
             }
         }
 
-        SectionTitle("About")
-        Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
-        RepoLink("Core app (HID Barcode Scanner)") { context.openUrl(CORE_REPO) }
-        RepoLink("This plugin's repository") { context.openUrl(PLUGIN_REPO) }
+        SectionTitle(stringResource(R.string.about))
+        Text(
+            stringResource(R.string.version, BuildConfig.VERSION_NAME),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        RepoLink(stringResource(R.string.core_repo_link)) { context.openUrl(CORE_REPO) }
+        RepoLink(stringResource(R.string.plugin_repo_link)) { context.openUrl(PLUGIN_REPO) }
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -383,9 +391,12 @@ private fun TransportTab() {
 private fun LiveStatusCard() {
     val status by TcpService.status.collectAsState()
     val (color, label) = when {
-        !status.running -> MaterialTheme.colorScheme.onSurfaceVariant to "Stopped"
-        status.connected -> Color(0xFF43A047) to (status.summary ?: "Connected")
-        else -> Color(0xFFFB8C00) to (status.summary ?: "Waiting")
+        !status.running ->
+            MaterialTheme.colorScheme.onSurfaceVariant to stringResource(R.string.status_stopped)
+        status.connected ->
+            Color(0xFF43A047) to (status.summary ?: stringResource(R.string.status_connected))
+        else ->
+            Color(0xFFFB8C00) to (status.summary ?: stringResource(R.string.status_waiting))
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -411,10 +422,10 @@ private fun LogTab() {
         OutlinedButton(onClick = { EventLog.clear() }, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.Delete, null)
             Spacer(Modifier.width(8.dp))
-            Text("Clear log")
+            Text(stringResource(R.string.clear_log))
         }
         if (logEntries.isEmpty()) {
-            Text("No events yet", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.no_events), style = MaterialTheme.typography.bodySmall)
         } else {
             logEntries.forEach { entry ->
                 Text(entry, style = MaterialTheme.typography.bodySmall)

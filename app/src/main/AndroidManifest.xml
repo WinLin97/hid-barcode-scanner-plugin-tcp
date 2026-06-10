@@ -21,7 +21,7 @@
     <application
         android:allowBackup="true"
         android:icon="@android:drawable/ic_dialog_info"
-        android:label="BT Scanner TCP Transport Plugin"
+        android:label="@string/app_name"
         android:theme="@style/AppTheme">
 
         <activity
@@ -39,6 +39,8 @@
         </activity>
 
         <!-- Receives scans from the core app. meta-data label is shown in the core's plugin picker.
+             NOTE: the label/author meta-data must stay literal strings — the core reads them via
+             metaData.getString(), so a @string resource reference would resolve to null there.
              android:permission restricts senders to apps that hold RECEIVE_SCANS. The core
              defines this permission AND must itself request it via uses-permission (defining
              does not grant!) so it can send.

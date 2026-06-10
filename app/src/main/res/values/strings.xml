@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BT Scanner TCP Transport Plugin</string>
+    <string name="screen_title">TCP Transport Plugin</string>
+
+    <string name="tab_transport">Transport</string>
+    <string name="tab_event_log">Event log</string>
+
+    <string name="menu">Menu</string>
+    <string name="dark_theme">Dark theme</string>
+    <string name="dynamic_theme">Dynamic theme</string>
+
+    <string name="status_stopped">Stopped</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_waiting">Waiting</string>
+
+    <string name="intro">Scans from the HID Barcode Scanner are forwarded over TCP. Enable this plugin in the scanner: Settings → Dropdown menu → External output plugins → toggle it on.</string>
+
+    <string name="mode">Mode</string>
+    <string name="mode_client">Client</string>
+    <string name="mode_server">Server</string>
+    <string name="section_client">Client (connect to a server)</string>
+    <string name="host">Host</string>
+    <string name="client_port">Client port</string>
+    <string name="connect_timeout">Connect timeout (ms)</string>
+    <string name="section_server">Server (listen for clients)</string>
+    <string name="server_port">Server port</string>
+    <string name="max_clients">Max clients</string>
+    <string name="idle_timeout">Client idle timeout (ms, 0 = off)</string>
+    <string name="port_range_error">Port must be 1–65535</string>
+
+    <string name="save_settings">Save settings</string>
+    <string name="saved_and_restarted">Saved and restarted</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+
+    <string name="about">About</string>
+    <string name="version">Version %1$s</string>
+    <string name="core_repo_link">Core app (HID Barcode Scanner)</string>
+    <string name="plugin_repo_link">This plugin\'s repository</string>
+
+    <string name="clear_log">Clear log</string>
+    <string name="no_events">No events yet</string>
+
+    <!-- Foreground-service notification + live status summary (the summary is also reported to the
+         core app and shown in its plugin picker). Ports passed pre-formatted as strings. -->
+    <string name="notif_channel">TCP Transport</string>
+    <string name="status_client">TCP client → %1$s:%2$s</string>
+    <string name="status_server">TCP server on port %1$s</string>
+    <string name="status_suffix_connected">%1$s (connected)</string>
+    <string name="status_suffix_waiting">%1$s (waiting)</string>
+</resources>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BT Scanner Wtyczka transportu TCP</string>
+    <string name="screen_title">Wtyczka transportu TCP</string>
+
+    <string name="tab_transport">Transport</string>
+    <string name="tab_event_log">Dziennik zdarzeń</string>
+
+    <string name="menu">Menu</string>
+    <string name="dark_theme">Ciemny motyw</string>
+    <string name="dynamic_theme">Dynamiczny motyw</string>
+
+    <string name="status_stopped">Zatrzymano</string>
+    <string name="status_connected">Połączono</string>
+    <string name="status_waiting">Oczekiwanie</string>
+
+    <string name="intro">Skany z HID Barcode Scanner są przekazywane przez TCP. Włącz tę wtyczkę w skanerze: Ustawienia → Menu rozwijane → Wyjście do wtyczek → włącz przełącznik.</string>
+
+    <string name="mode">Tryb</string>
+    <string name="mode_client">Klient</string>
+    <string name="mode_server">Serwer</string>
+    <string name="section_client">Klient (łączy się z serwerem)</string>
+    <string name="host">Host</string>
+    <string name="client_port">Port klienta</string>
+    <string name="connect_timeout">Limit czasu połączenia (ms)</string>
+    <string name="section_server">Serwer (nasłuchuje połączeń od klientów)</string>
+    <string name="server_port">Port serwera</string>
+    <string name="max_clients">Maks. liczba klientów</string>
+    <string name="idle_timeout">Limit bezczynności klienta (ms, 0 = wył.)</string>
+    <string name="port_range_error">Port musi być z zakresu 1–65535</string>
+
+    <string name="save_settings">Zapisz ustawienia</string>
+    <string name="saved_and_restarted">Zapisano i zrestartowano</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+
+    <string name="about">O wtyczce</string>
+    <string name="version">Wersja %1$s</string>
+    <string name="core_repo_link">Repo aplikacja głównej (HID Barcode Scanner)</string>
+    <string name="plugin_repo_link">Repo tej wtyczki</string>
+
+    <string name="clear_log">Wyczyść dziennik</string>
+    <string name="no_events">Brak zdarzeń</string>
+
+    <string name="notif_channel">Transport TCP</string>
+    <string name="status_client">Klient TCP → %1$s:%2$s</string>
+    <string name="status_server">Serwer TCP na porcie %1$s</string>
+    <string name="status_suffix_connected">%1$s (połączony)</string>
+    <string name="status_suffix_waiting">%1$s (oczekuje)</string>
+</resources>

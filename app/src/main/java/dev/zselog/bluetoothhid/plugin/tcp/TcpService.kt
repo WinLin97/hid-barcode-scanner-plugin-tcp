@@ -194,10 +194,11 @@ class TcpService : Service() {
     private fun refreshStatus() {
         val c = controller
         val connected = c?.isConnected() == true
-        val summary = if (c == null) null else statusText() + when {
-            connected -> " (connected)"
-            c.isListening() -> " (waiting)"
-            else -> ""
+        val summary = when {
+            c == null -> null
+            connected -> getString(R.string.status_suffix_connected, statusText())
+            c.isListening() -> getString(R.string.status_suffix_waiting, statusText())
+            else -> statusText()
         }
         val next = TransportStatus(running = c != null, connected = connected, summary = summary)
         if (next == _status.value) return // unchanged — don't spam the core
@@ -235,19 +236,28 @@ class TcpService : Service() {
     }
 
     private fun statusText(): String = when (TcpConfig.getMode(this)) {
-        TcpConfig.Mode.CLIENT -> "TCP client → ${TcpConfig.getHost(this)}:${TcpConfig.getClientPort(this)}"
-        TcpConfig.Mode.SERVER -> "TCP server on port ${TcpConfig.getServerPort(this)}"
+        TcpConfig.Mode.CLIENT -> getString(
+            R.string.status_client,
+            TcpConfig.getHost(this),
+            TcpConfig.getClientPort(this).toString()
+        )
+        TcpConfig.Mode.SERVER ->
+            getString(R.string.status_server, TcpConfig.getServerPort(this).toString())
     }
 
     private fun buildNotification(text: String): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "TCP Transport", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(
+                    CHANNEL_ID,
+                    getString(R.string.notif_channel),
+                    NotificationManager.IMPORTANCE_LOW
+                )
             )
         }
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("TCP Transport Plugin")
+            .setContentTitle(getString(R.string.screen_title))
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setOngoing(true)
