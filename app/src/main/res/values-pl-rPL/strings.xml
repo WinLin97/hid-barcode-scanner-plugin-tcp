@@ -24,6 +24,8 @@
     <string name="client_port">Port klienta</string>
     <string name="connect_timeout">Limit czasu połączenia (ms)</string>
     <string name="section_server">Serwer (nasłuchuje połączeń od klientów)</string>
+    <string name="reachable_at">Klienci mogą się połączyć z:</string>
+    <string name="no_network">Brak adresu — umożliw dostęp do sieci (Wi-Fi, Ethernet, dane mobilne…)</string>
     <string name="server_port">Port serwera</string>
     <string name="max_clients">Maks. liczba klientów</string>
     <string name="idle_timeout">Limit bezczynności klienta (ms, 0 = wył.)</string>
@@ -36,7 +38,7 @@
 
     <string name="about">O wtyczce</string>
     <string name="version">Wersja %1$s</string>
-    <string name="core_repo_link">Repo aplikacja głównej (HID Barcode Scanner)</string>
+    <string name="core_repo_link">Repo aplikacji głównej (HID Barcode Scanner)</string>
     <string name="plugin_repo_link">Repo tej wtyczki</string>
 
     <string name="clear_log">Wyczyść dziennik</string>

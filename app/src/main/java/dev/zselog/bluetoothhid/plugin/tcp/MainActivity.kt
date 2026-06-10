@@ -68,6 +68,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -78,10 +79,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.net.Inet4Address
+import java.net.NetworkInterface
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -329,6 +334,7 @@ private fun TransportTab() {
             Field(connectTimeout, { connectTimeout = it }, stringResource(R.string.connect_timeout))
         } else {
             SectionTitle(stringResource(R.string.section_server))
+            ServerAddresses(portText = serverPort)
             Field(
                 serverPort, { serverPort = it }, stringResource(R.string.server_port),
                 isError = !serverPortValid,
@@ -383,6 +389,58 @@ private fun TransportTab() {
         RepoLink(stringResource(R.string.core_repo_link)) { context.openUrl(CORE_REPO) }
         RepoLink(stringResource(R.string.plugin_repo_link)) { context.openUrl(PLUGIN_REPO) }
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+/**
+ * All IPv4 addresses a TCP client could connect to: every up interface (Wi-Fi, Ethernet, VPN,
+ * mobile data) INCLUDING loopback — the server binds the wildcard address, so a client on the
+ * same device can use 127.0.0.1. Loopback is sorted last; the externally reachable ones matter more.
+ */
+private fun localIpv4Addresses(): List<String> =
+    runCatching {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp }
+            .flatMap { it.inetAddresses.toList() }
+            .filterIsInstance<Inet4Address>()
+            .mapNotNull { it.hostAddress }
+            .sortedBy { it.startsWith("127.") }
+    }.getOrDefault(emptyList())
+
+/**
+ * Server mode helper: lists the device addresses clients can connect to, with the port currently
+ * typed in the form. Re-polled every few seconds so joining/leaving a network updates the list
+ * while the screen is open (the poll dies with the composable).
+ */
+@Composable
+private fun ServerAddresses(portText: String) {
+    val addresses by produceState(initialValue = localIpv4Addresses()) {
+        while (true) {
+            delay(3_000)
+            value = localIpv4Addresses()
+        }
+    }
+    if (addresses.isNotEmpty()) {
+        Text(
+            stringResource(R.string.reachable_at),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        addresses.forEach { ip ->
+            Text(
+                "$ip:$portText",
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+    }
+    // Only loopback (or nothing at all) → other devices can't reach us; explain why.
+    if (addresses.none { !it.startsWith("127.") }) {
+        Text(
+            stringResource(R.string.no_network),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

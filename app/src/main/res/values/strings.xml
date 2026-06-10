@@ -24,6 +24,8 @@
     <string name="client_port">Client port</string>
     <string name="connect_timeout">Connect timeout (ms)</string>
     <string name="section_server">Server (listen for clients)</string>
+    <string name="reachable_at">Clients can connect to:</string>
+    <string name="no_network">No address — enable network access (Wi-Fi, Ethernet, mobile data…)</string>
     <string name="server_port">Server port</string>
     <string name="max_clients">Max clients</string>
     <string name="idle_timeout">Client idle timeout (ms, 0 = off)</string>
