@@ -40,7 +40,8 @@
 
         <!-- Receives scans from the core app. meta-data label is shown in the core's plugin picker.
              android:permission restricts senders to apps that hold RECEIVE_SCANS. The core
-             declares this permission and therefore automatically holds it, so it can send.
+             defines this permission AND must itself request it via uses-permission (defining
+             does not grant!) so it can send.
              Other apps must explicitly request it — random apps cannot send fake scans.
              Note: if the core is reinstalled, the plugin must be reinstalled too to restore
              the RECEIVE_SCANS grant (standard Android custom-permission limitation). -->
