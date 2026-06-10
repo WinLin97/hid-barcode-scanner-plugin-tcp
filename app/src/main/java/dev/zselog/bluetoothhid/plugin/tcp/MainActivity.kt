@@ -2,12 +2,15 @@ package dev.zselog.bluetoothhid.plugin.tcp
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -58,23 +63,45 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 15+ enforces edge-to-edge for this targetSdk; this call brings the same
+        // transparent system bars to older devices so the nav bar follows the app theme there too.
+        enableEdgeToEdge()
+        // The frames before Compose's first draw (splash → XML-theme window) use the SYSTEM
+        // dark-mode setting, so an in-app theme override used to flash the wrong colors twice on
+        // every launch. Paint the window and the system-bar icon contrast to the persisted choice
+        // up front; Compose then first-draws in the same colors and nothing visibly changes.
+        val dark = TcpConfig.getDarkTheme(this)
+            ?: (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+                Configuration.UI_MODE_NIGHT_YES)
+        window.setBackgroundDrawable(
+            ColorDrawable(if (dark) 0xFF1C1B1F.toInt() else 0xFFFFFBFE.toInt())
+        )
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
         setContent { PluginApp() }
     }
 }
@@ -97,6 +124,27 @@ private fun PluginApp() {
         else -> lightColorScheme()
     }
 
+    // System bar icon contrast must follow the IN-APP theme choice, not the XML theme: the user
+    // can override dark/light from the menu, so windowLightStatusBar from styles.xml would go
+    // stale. Light theme → dark icons, dark theme → light icons.
+    val view = LocalView.current
+    val applyBarAppearance: (Boolean) -> Unit = { isDark ->
+        if (!view.isInEditMode) {
+            val window = (view.context as ComponentActivity).window
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !isDark
+                isAppearanceLightNavigationBars = !isDark
+            }
+            // 3-button navigation: the system paints a fixed light scrim behind the buttons by
+            // default, which clashes with the dark theme. Disable it so the buttons sit directly
+            // on the app background (icon contrast is handled above).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+            }
+        }
+    }
+    SideEffect { applyBarAppearance(dark) }
+
     MaterialTheme(colorScheme = colors) {
         SettingsScreen(
             dark = dark,
@@ -105,6 +153,9 @@ private fun PluginApp() {
                 val next = !dark
                 darkOverride = next
                 TcpConfig.setDarkTheme(context, next)
+                // Pre-frame flip so the system-bar icons recolor with the same vsync as the app
+                // content instead of one frame after it (SideEffect alone runs post-draw).
+                applyBarAppearance(next)
             },
             onToggleDynamic = {
                 val next = !dynamic
@@ -123,24 +174,44 @@ private fun SettingsScreen(
     onToggleDark: () -> Unit,
     onToggleDynamic: () -> Unit,
 ) {
-    var tab by remember { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("TCP Transport Plugin") },
-                actions = { ThemeMenu(dark, dynamic, onToggleDark, onToggleDynamic) }
-            )
+            // key(dark, dynamic): M3's TopAppBar animates its container color with a ~0.5s spring
+            // (the scroll-transition machinery), which also kicks in on a theme switch — the rest
+            // of the UI snaps in one frame while the bar slowly cross-fades. Recreating it on
+            // theme change resets that animation state so the bar recolors in the same frame.
+            key(dark, dynamic) {
+                TopAppBar(
+                    title = { Text("TCP Transport Plugin") },
+                    actions = { ThemeMenu(dark, dynamic, onToggleDark, onToggleDynamic) }
+                )
+            }
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            TabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Transport") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Event log") })
+            TabRow(selectedTabIndex = pagerState.currentPage) {
+                listOf("Transport", "Event log").forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        text = { Text(title) }
+                    )
+                }
             }
-            when (tab) {
-                0 -> TransportTab()
-                else -> LogTab()
+            // beyondViewportPageCount keeps the off-screen tab composed so unsaved form edits
+            // survive swiping to the log and back.
+            HorizontalPager(
+                state = pagerState,
+                beyondViewportPageCount = 1,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (page) {
+                    0 -> TransportTab()
+                    else -> LogTab()
+                }
             }
         }
     }
@@ -157,17 +228,26 @@ private fun ThemeMenu(
     IconButton(onClick = { expanded = true }) {
         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
     }
+    // Dismiss BEFORE toggling: the popup is its own window and repaints a frame later than the
+    // app window, so changing the theme with it open makes the top of the screen visibly flash
+    // twice. Closing first leaves a single, clean recolor (and matches stock menu behaviour).
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
         DropdownMenuItem(
             text = { Text("Dark theme") },
             trailingIcon = { Checkbox(checked = dark, onCheckedChange = null) },
-            onClick = onToggleDark
+            onClick = {
+                expanded = false
+                onToggleDark()
+            }
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             DropdownMenuItem(
                 text = { Text("Dynamic theme") },
                 trailingIcon = { Checkbox(checked = dynamic, onCheckedChange = null) },
-                onClick = onToggleDynamic
+                onClick = {
+                    expanded = false
+                    onToggleDynamic()
+                }
             )
         }
     }

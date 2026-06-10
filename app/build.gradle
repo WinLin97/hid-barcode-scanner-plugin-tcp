@@ -10,7 +10,7 @@ kotlin {
 
 // versionName: -PversionName if set (CI passes the git tag without "v"), else this dev default.
 // versionCode is derived from the numeric x.y.z prefix (each part < 100).
-def appVersionName = (project.findProperty('versionName') ?: "0.0.3-alpha").toString()
+def appVersionName = (project.findProperty('versionName') ?: "0.0.4-alpha").toString()
 def appVersionCode = appVersionName.split('-')[0]
         .tokenize('.').inject(0) { acc, part -> acc * 100 + (part as int) }
 
