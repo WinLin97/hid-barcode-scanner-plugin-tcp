@@ -8,10 +8,15 @@
     <!-- This plugin forwards scans over TCP -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Persistent TCP connection (server accept loop / client keep-alive) runs in a foreground service -->
+    <!-- Persistent TCP connection (server accept loop / client keep-alive) runs in a foreground
+         service. Type specialUse, NOT dataSync: Android 15+ caps dataSync at ~6h/day and then
+         kills the service — mid-shift for a transport meant to run while the user scans. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Self-check diagnostics: detect "no network" as a reason the transport can't connect -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Lets us send the result broadcast back to the dev.fabik.bluetoothhid core app (explicit, Android 11+ visibility). -->
     <queries>
@@ -57,6 +62,11 @@
             <meta-data
                 android:name="dev.fabik.bluetoothhid.plugin.label"
                 android:value="TCP Transport Plugin" />
+            <!-- Short name for space-constrained spots in the core's UI (per-scan result
+                 snackbar: "Plugin TCP: sent"). Optional; core falls back to the label above. -->
+            <meta-data
+                android:name="dev.fabik.bluetoothhid.plugin.shortLabel"
+                android:value="TCP" />
             <meta-data
                 android:name="dev.fabik.bluetoothhid.plugin.author"
                 android:value="zselog" />
@@ -77,6 +87,10 @@
         <service
             android:name=".TcpService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Persistent local-network TCP transport forwarding barcode scans from the companion scanner app while the user is actively scanning" />
+        </service>
     </application>
 </manifest>

@@ -53,6 +53,7 @@ class TcpService : Service() {
             val running: Boolean = false,
             val connected: Boolean = false,
             val summary: String? = null,
+            val state: PluginState = PluginState.IDLE,
         )
 
         private val _status = MutableStateFlow(TransportStatus())
@@ -61,6 +62,13 @@ class TcpService : Service() {
         // Convenience reads for PluginControlReceiver's health ping (kept as the public surface).
         val isRunning: Boolean get() = _status.value.running
         val statusSummary: String? get() = _status.value.summary
+        val currentState: PluginState get() = _status.value.state
+
+        // Rate limit for the "start blocked" EventLog entry: the core retries every 20s forever,
+        // which would flush the 100-entry log with duplicates of the same hint.
+        @Volatile
+        private var lastBlockedLogMs = 0L
+        private const val BLOCKED_LOG_INTERVAL_MS = 5 * 60_000L
 
         // Wall-clock of the last message received from the core; drives the watchdog.
         @Volatile
@@ -86,13 +94,23 @@ class TcpService : Service() {
                 if (foreground) ctx.startForegroundService(intent) else ctx.startService(intent)
             }.onFailure { e ->
                 Log.w(TAG, "Service start blocked (background/OEM restriction): ${e.message}")
-                EventLog.add("Couldn't start transport in background — allow Autostart / disable battery optimisation for this app")
+                val now = System.currentTimeMillis()
+                if (now - lastBlockedLogMs > BLOCKED_LOG_INTERVAL_MS) {
+                    lastBlockedLogMs = now
+                    EventLog.add("Couldn't start transport in background — allow Autostart / disable battery optimisation for this app")
+                }
             }.isSuccess
 
         fun start(ctx: Context) {
             val ok = safelyStart(ctx, Intent(ctx, TcpService::class.java).setAction(ACTION_START), foreground = true)
-            // Tell the core we're down so its UI reflects reality instead of waiting forever.
-            if (!ok) ResultReporter.reportStatus(ctx, running = false, detail = "start blocked by OS")
+            // Tell the core we're down so its UI reflects reality (and can show the remedy)
+            // instead of waiting forever.
+            if (!ok) ResultReporter.reportStatus(
+                ctx,
+                running = false,
+                state = PluginState.BLOCKED,
+                detail = "start blocked by OS — allow Autostart / disable battery optimisation"
+            )
         }
 
         fun restart(ctx: Context) {
@@ -127,10 +145,12 @@ class TcpService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 EventLog.add("Service start requested")
+                SelfCheck.log(this)
                 ensureStarted()
             }
             ACTION_RESTART -> {
                 EventLog.add("Service restart requested")
+                SelfCheck.log(this)
                 restartWithCurrentConfig()
             }
 
@@ -171,7 +191,10 @@ class TcpService : Service() {
                 val silentMs = System.currentTimeMillis() - lastCoreContactMs
                 if (silentMs > CORE_CONTACT_TIMEOUT_MS) {
                     Log.i(TAG, "Core silent for ${silentMs}ms — self-stopping (core unavailable)")
-                    EventLog.add("No contact from core for ${silentMs / 1000}s — stopping transport")
+                    EventLog.add(
+                        "No contact from core for ${silentMs / 1000}s — stopping transport " +
+                            "(by design: it only runs while the core app is active, to save battery)"
+                    )
                     stopEverything()
                     break
                 }
@@ -194,19 +217,51 @@ class TcpService : Service() {
     private fun refreshStatus() {
         val c = controller
         val connected = c?.isConnected() == true
+        // A missing RECEIVE_SCANS grant (core reinstalled) trumps everything: the transport may
+        // run, but no scan can ever reach it. Reporting it here is the only way the core can show
+        // the remedy — its own broadcasts no longer reach us at all.
+        val noPermission = !SelfCheck.hasReceivePermission(this)
+        val state = when {
+            noPermission -> PluginState.NO_PERMISSION
+            c == null -> PluginState.IDLE
+            connected -> PluginState.CONNECTED
+            c.isListening() ->
+                if (TcpConfig.getMode(this) == TcpConfig.Mode.SERVER) PluginState.LISTENING
+                else PluginState.CONNECTING
+            else -> PluginState.STARTING
+        }
         val summary = when {
+            noPermission -> getString(R.string.status_no_permission)
             c == null -> null
             connected -> getString(R.string.status_suffix_connected, statusText())
             c.isListening() -> getString(R.string.status_suffix_waiting, statusText())
             else -> statusText()
         }
-        val next = TransportStatus(running = c != null, connected = connected, summary = summary)
+        val next = TransportStatus(running = c != null, connected = connected, summary = summary, state = state)
         if (next == _status.value) return // unchanged — don't spam the core
         _status.value = next
         // Proactively announce the change to the core so its UI/health reflects start/connect/stop
         // within ms instead of waiting for the next liveness ping (also acts as a SET_ENABLED ack).
         // The ping path stays an explicit reply (see PluginControlReceiver); this is in addition.
-        ResultReporter.reportStatus(this, running = next.running, detail = next.summary)
+        ResultReporter.reportStatus(this, running = next.running, state = next.state, detail = next.summary)
+    }
+
+    /**
+     * Android 15+: some FGS types have a hard runtime cap; when it expires the system calls this
+     * and the service MUST stop promptly or it is killed with a RemoteServiceException. The
+     * specialUse type currently has no cap — this is the safety net in case that ever changes.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w(TAG, "FGS timeout (type=$fgsType) — stopping transport")
+        EventLog.add("System time limit for the transport service reached — stopping")
+        stopEverything()
+        // Sent after stopEverything so this (with the reason) is the last status the core keeps.
+        ResultReporter.reportStatus(
+            this,
+            running = false,
+            state = PluginState.ERROR,
+            detail = "stopped by system (foreground-service time limit)"
+        )
     }
 
     /** Get-or-create the controller, wiring it to push live status updates on connection changes. */

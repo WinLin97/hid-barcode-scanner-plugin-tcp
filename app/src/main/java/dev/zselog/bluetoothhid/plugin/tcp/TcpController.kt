@@ -3,6 +3,7 @@ package dev.zselog.bluetoothhid.plugin.tcp
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,6 +22,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
 /** Local IPv4 addresses, for showing the server's reachable address(es). */
@@ -52,12 +54,12 @@ class TcpController(private val context: Context) {
     companion object {
         private const val TAG = "TcpController"
 
-        private const val DEFAULT_PORT = 51000
         private val PORT_RANGE = 1..65535
         private const val READ_BUFFER_SIZE = 1024
 
-        private const val WELCOME_MESSAGE =
-            "Hello from Android HID Barcode Scanner TCP plugin"
+        // Hard deadline for a single socket write. A peer that stopped ACKing (dead Wi-Fi,
+        // sleeping PC) blocks write() for minutes while sendMutex holds up every later scan.
+        private const val WRITE_TIMEOUT_MS = 10_000L
     }
 
     private fun L(msg: String) {
@@ -70,14 +72,12 @@ class TcpController(private val context: Context) {
         EventLog.add(if (t == null) msg else failureDetail(msg, t))
     }
 
+    // Inbound data is diagnostic only (e.g. confirming reachability by sending a test message
+    // from the peer); it is never forwarded anywhere.
     private fun showReceivedMessage(message: String) {
-        CoroutineScope(Dispatchers.Main).launch {
+        mainScope.launch {
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
-    }
-
-    private fun sendWelcome(socket: Socket) {
-        runCatching { socket.getOutputStream().apply { write(WELCOME_MESSAGE.toByteArray()); flush() } }
     }
 
     private fun failureDetail(prefix: String, throwable: Throwable): String {
@@ -101,12 +101,21 @@ class TcpController(private val context: Context) {
     }
 
     private val controllerJob = SupervisorJob()
-    private val controllerScope = CoroutineScope(controllerJob + Dispatchers.IO)
+
+    // Backstop: a socket can throw outside the loops' catch blocks (e.g. a peer resetting the
+    // connection in the window between accept() and the handler's try). Without a handler such an
+    // exception escapes the coroutine and kills the whole process.
+    private val crashBackstop = CoroutineExceptionHandler { _, t ->
+        LE("Unexpected transport error (recovered)", t)
+    }
+    private val controllerScope = CoroutineScope(controllerJob + Dispatchers.IO + crashBackstop)
+    private val mainScope = CoroutineScope(controllerJob + Dispatchers.Main)
     private val sendMutex = Mutex()
 
     private val connectedClients = CopyOnWriteArrayList<Socket>()
     @Volatile private var activeSocket: Socket? = null
     @Volatile private var isConnected: Boolean = false
+    @Volatile private var isConnecting: Boolean = false
 
     private var serverSocket: ServerSocket? = null
     @Volatile private var isServerStarted: Boolean = false
@@ -193,6 +202,8 @@ class TcpController(private val context: Context) {
                     }
 
                     L("TCP client connected from $clientAddr (${connectedClients.size + 1}/$maxClients)")
+                    // Detect half-open connections (peer vanished without FIN/RST) between scans.
+                    runCatching { socket.keepAlive = true }
                     connectedClients.add(socket)
                     isConnected = true
                     notifyState()
@@ -219,11 +230,12 @@ class TcpController(private val context: Context) {
     }
 
     private fun manageClientConnection(socket: Socket, clientAddr: String, maxClients: Int, idleTimeoutMs: Int) {
-        if (idleTimeoutMs > 0) socket.soTimeout = idleTimeoutMs
-        val input = socket.getInputStream()
-        L("TCP server: connection active from $clientAddr (idle timeout: ${if (idleTimeoutMs > 0) "${idleTimeoutMs}ms" else "disabled"})")
         try {
-            sendWelcome(socket)
+            // Inside the try: the peer can reset the connection in the window between accept()
+            // and this handler starting, making even soTimeout/getInputStream throw.
+            if (idleTimeoutMs > 0) socket.soTimeout = idleTimeoutMs
+            val input = socket.getInputStream()
+            L("TCP server: connection active from $clientAddr (idle timeout: ${if (idleTimeoutMs > 0) "${idleTimeoutMs}ms" else "disabled"})")
             val buffer = ByteArray(READ_BUFFER_SIZE)
             while (true) {
                 val bytes = input.read(buffer)
@@ -234,7 +246,7 @@ class TcpController(private val context: Context) {
             }
         } catch (e: SocketTimeoutException) {
             L("TCP server: $clientAddr idle timeout after ${idleTimeoutMs}ms — disconnecting")
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             LE("TCP server: connection error from $clientAddr", e)
         } finally {
             runCatching { socket.close() }
@@ -277,8 +289,15 @@ class TcpController(private val context: Context) {
                     notifyState()
 
                     socket = Socket()
+                    // Detect half-open connections (peer vanished without FIN/RST) between scans.
+                    runCatching { socket.keepAlive = true }
                     activeSocket = socket
-                    socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
+                    isConnecting = true
+                    try {
+                        socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
+                    } finally {
+                        isConnecting = false
+                    }
                     L("TCP client connected to $host:$port")
 
                     isConnected = true
@@ -295,12 +314,15 @@ class TcpController(private val context: Context) {
                     val backoff = minOf(250L * errorCount, 30_000L) + Random.nextLong(0, 1000)
                     delay(backoff)
                 } finally {
-                    isConnected = false
+                    // Touch shared state only if this socket is still the active one — a stale
+                    // iteration's finally must not tear down a newer, healthy connection that
+                    // restartClient() has already established (self-inflicted reconnect storm).
                     if (activeSocket === socket) {
+                        isConnected = false
                         runCatching { socket?.close() }
                         activeSocket = null
+                        notifyState()
                     }
-                    notifyState()
                 }
 
                 if (connectionEndedAfterConnect && isActive) {
@@ -311,14 +333,6 @@ class TcpController(private val context: Context) {
             }
             L("TCP client loop terminated")
         }
-    }
-
-    fun restartServer() {
-        serverJob?.cancel()
-        serverJob = null
-        closeServerResources()
-        notifyState()
-        startServer()
     }
 
     fun restartClient() {
@@ -345,10 +359,9 @@ class TcpController(private val context: Context) {
     }
 
     private fun manageConnection(socket: Socket, role: String) {
-        val input = socket.getInputStream()
-        L("TCP $role: connection active")
         try {
-            sendWelcome(socket)
+            val input = socket.getInputStream()
+            L("TCP $role: connection active")
             val buffer = ByteArray(READ_BUFFER_SIZE)
             while (true) {
                 val bytes = input.read(buffer)
@@ -357,7 +370,7 @@ class TcpController(private val context: Context) {
                 L("TCP $role received: $received")
                 showReceivedMessage(received)
             }
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             LE("TCP $role: connection error", e)
         } finally {
             runCatching { socket.close() }
@@ -365,7 +378,35 @@ class TcpController(private val context: Context) {
         }
     }
 
+    /**
+     * Blocking socket write with a hard deadline. A blocked write() can't be interrupted by
+     * coroutine cancellation — closing the socket is the only way to abort it, so a watchdog
+     * closes the socket when the deadline passes; the write then fails with a SocketException
+     * and the caller's normal failure path (close/remove/reconnect) takes over.
+     */
+    private fun writeWithDeadline(socket: Socket, data: ByteArray) {
+        val watchdog = controllerScope.launch {
+            delay(WRITE_TIMEOUT_MS)
+            LE("TCP write stalled for ${WRITE_TIMEOUT_MS}ms — closing socket to abort it")
+            runCatching { socket.close() }
+        }
+        try {
+            val out = socket.getOutputStream()
+            out.write(data)
+            out.flush()
+        } finally {
+            watchdog.cancel()
+        }
+    }
+
     fun sendProcessedData(processedString: String, onResult: (Boolean, String) -> Unit) {
+        // Exactly-once result guard: every scan handed to the transport MUST produce a result for
+        // the core — also when the controller is stopped mid-send (watchdog/STOP cancels the
+        // coroutine before the normal path reports), which invokeOnCompletion below covers.
+        val reported = AtomicBoolean(false)
+        val reportOnce: (Boolean, String) -> Unit = { ok, detail ->
+            if (reported.compareAndSet(false, true)) onResult(ok, detail)
+        }
         controllerScope.launch {
             sendMutex.withLock {
                 val data = processedString.toByteArray(Charsets.UTF_8)
@@ -375,15 +416,13 @@ class TcpController(private val context: Context) {
                     val recipients = connectedClients.toList()
                     if (recipients.isEmpty()) {
                         L("TCP server: no clients connected — data dropped")
-                        onResult(false, "no TCP clients connected")
+                        reportOnce(false, "no TCP clients connected")
                         return@withLock
                     }
                     var delivered = 0
                     recipients.forEach { socket ->
                         runCatching {
-                            val out = socket.getOutputStream()
-                            out.write(data)
-                            out.flush()
+                            writeWithDeadline(socket, data)
                         }.onSuccess { delivered++ }.onFailure { e ->
                             LE("TCP broadcast send failed to ${socket.inetAddress?.hostAddress ?: socket.inetAddress?.toString() ?: "unknown"}", e)
                             runCatching { socket.close() }
@@ -393,7 +432,7 @@ class TcpController(private val context: Context) {
                         }
                     }
                     L("TCP broadcast to $delivered/${recipients.size} client(s): $processedString")
-                    onResult(
+                    reportOnce(
                         delivered > 0,
                         if (delivered > 0) "forwarded to $delivered/${recipients.size} TCP client(s)"
                         else "TCP broadcast failed for all ${recipients.size} client(s)"
@@ -404,8 +443,15 @@ class TcpController(private val context: Context) {
                 // Client mode: single socket. On no connection, reconnect and retry once.
                 val socket = activeSocket
                 if (socket == null || !isConnected) {
-                    L("TCP client: no active connection — triggering reconnect")
-                    restartClient()
+                    // Don't cancel a connect attempt that is already in flight (it may be ms from
+                    // succeeding — a burst of scans during an outage must not keep resetting it);
+                    // restart only when the loop is dead or sitting out a backoff delay.
+                    if (clientJob?.isActive == true && isConnecting) {
+                        L("TCP client: connect already in progress — waiting for it")
+                    } else {
+                        L("TCP client: no active connection — triggering reconnect")
+                        restartClient()
+                    }
                     val connectTimeoutMs = TcpConfig.getConnectTimeoutMs(context).coerceIn(500, 30_000)
                     val deadline = System.currentTimeMillis() + connectTimeoutMs + 1000L
                     while (!isConnected && isActive && System.currentTimeMillis() < deadline) {
@@ -414,36 +460,34 @@ class TcpController(private val context: Context) {
                     val retry = activeSocket
                     if (retry != null && isConnected) {
                         runCatching {
-                            val out = retry.getOutputStream()
-                            out.write(data)
-                            out.flush()
+                            writeWithDeadline(retry, data)
                             L("TCP sent after reconnect: $processedString")
                         }.onSuccess {
-                            onResult(true, "forwarded over TCP after reconnect")
+                            reportOnce(true, "forwarded over TCP after reconnect")
                         }.onFailure {
                             LE("TCP retry send failed", it)
-                            onResult(false, failureDetail("TCP retry send failed", it))
+                            reportOnce(false, failureDetail("TCP retry send failed", it))
                         }
                     } else {
                         L("TCP reconnect didn't establish in time — data dropped")
-                        onResult(false, "TCP reconnect did not establish in time")
+                        reportOnce(false, "TCP reconnect did not establish in time")
                     }
                     return@withLock
                 }
 
                 runCatching {
-                    val out = socket.getOutputStream()
-                    out.write(data)
-                    out.flush()
+                    writeWithDeadline(socket, data)
                     L("TCP sent: $processedString")
                 }.onSuccess {
-                    onResult(true, "forwarded over TCP")
+                    reportOnce(true, "forwarded over TCP")
                 }.onFailure { e ->
                     LE("TCP send failed", e)
                     restartClient()
-                    onResult(false, failureDetail("TCP send failed", e))
+                    reportOnce(false, failureDetail("TCP send failed", e))
                 }
             }
+        }.invokeOnCompletion { cause ->
+            if (cause != null) reportOnce(false, "transport stopped before the send completed")
         }
     }
 }

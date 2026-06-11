@@ -12,17 +12,13 @@ import android.util.Log
  *  - SET_ENABLED(false) → release it (stop [TcpService]),
  *  - PING               → answer with our current liveness so the core can self-heal a dead service.
  *
- * Being a manifest receiver, an incoming targeted broadcast cold-starts this app if needed and grants
- * the short window required to start the foreground service. Action/extra strings MUST match the
- * core's ExternalProtocol — keep in sync.
+ * Being a manifest receiver, an incoming targeted broadcast cold-starts this app if needed. Note:
+ * on Android 12+ that does NOT exempt the foreground-service start from background restrictions —
+ * [TcpService.safelyStart] handles the denial and reports BLOCKED. Contract strings live in [Protocol].
  */
 class PluginControlReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "PluginControlReceiver"
-
-        const val ACTION_SET_ENABLED = "dev.fabik.bluetoothhid.plugin.action.SET_ENABLED"
-        const val ACTION_PING = "dev.fabik.bluetoothhid.plugin.action.PING"
-        const val EXTRA_ENABLED = "enabled"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -31,8 +27,8 @@ class PluginControlReceiver : BroadcastReceiver() {
             TcpService.noteCoreContact()
 
             when (intent.action) {
-                ACTION_SET_ENABLED -> {
-                    val enabled = intent.getBooleanExtra(EXTRA_ENABLED, false)
+                Protocol.ACTION_SET_ENABLED -> {
+                    val enabled = intent.getBooleanExtra(Protocol.EXTRA_ENABLED, false)
                     Log.i(TAG, "Core set enabled=$enabled")
                     if (enabled) {
                         EventLog.add("Core enabled plugin — starting transport")
@@ -43,11 +39,12 @@ class PluginControlReceiver : BroadcastReceiver() {
                     }
                 }
 
-                ACTION_PING -> {
-                    Log.i(TAG, "Core ping — running=${TcpService.isRunning}")
+                Protocol.ACTION_PING -> {
+                    Log.i(TAG, "Core ping — running=${TcpService.isRunning} state=${TcpService.currentState}")
                     ResultReporter.reportStatus(
                         context,
                         running = TcpService.isRunning,
+                        state = TcpService.currentState,
                         detail = TcpService.statusSummary
                     )
                 }

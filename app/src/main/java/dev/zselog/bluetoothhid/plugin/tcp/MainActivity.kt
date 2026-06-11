@@ -109,6 +109,9 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = !dark
         }
         setContent { PluginApp() }
+        // Diagnostic snapshot every time the settings UI opens — lands in the Event log tab, so
+        // "why doesn't it work" (lost permission, no core app, no network…) is always answerable.
+        SelfCheck.log(this)
     }
 }
 
@@ -275,12 +278,22 @@ private fun TransportTab() {
     var maxClients by remember { mutableStateOf(TcpConfig.getMaxClients(context).toString()) }
     var idleTimeout by remember { mutableStateOf(TcpConfig.getIdleTimeoutMs(context).toString()) }
 
+    // Every field is validated against the same ranges the controller enforces at runtime —
+    // no silent default-substitution or hidden coercion between what the form shows and what runs.
+    val hostValid = host.isNotBlank()
     val clientPortValid = clientPort.toIntOrNull()?.let { it in 1..65535 } ?: false
     val serverPortValid = serverPort.toIntOrNull()?.let { it in 1..65535 } ?: false
-    val hasPortError = if (mode == TcpConfig.Mode.CLIENT) !clientPortValid else !serverPortValid
+    val connectTimeoutValid = connectTimeout.toIntOrNull()?.let { it in 500..30_000 } ?: false
+    val maxClientsValid = maxClients.toIntOrNull()?.let { it in 1..10 } ?: false
+    val idleTimeoutValid = idleTimeout.toIntOrNull()?.let { it in 0..300_000 } ?: false
+    val formValid = when (mode) {
+        TcpConfig.Mode.CLIENT -> hostValid && clientPortValid && connectTimeoutValid
+        TcpConfig.Mode.SERVER -> serverPortValid && maxClientsValid && idleTimeoutValid
+    }
 
     // Persist whatever the form currently shows. Both Save and Start go through this so the visible
     // form is always the single source of truth — no "changed mode but service still on the old one".
+    // Only reachable with formValid == true; the defaults are a parse-failure backstop, not a policy.
     fun persistForm() = TcpConfig.save(
         context,
         mode = mode,
@@ -325,13 +338,21 @@ private fun TransportTab() {
         val portError = stringResource(R.string.port_range_error)
         if (mode == TcpConfig.Mode.CLIENT) {
             SectionTitle(stringResource(R.string.section_client))
-            Field(host, { host = it }, stringResource(R.string.host), numeric = false)
+            Field(
+                host, { host = it }, stringResource(R.string.host), numeric = false,
+                isError = !hostValid,
+                errorText = if (!hostValid) stringResource(R.string.host_required) else null,
+            )
             Field(
                 clientPort, { clientPort = it }, stringResource(R.string.client_port),
                 isError = !clientPortValid,
                 errorText = if (!clientPortValid) portError else null,
             )
-            Field(connectTimeout, { connectTimeout = it }, stringResource(R.string.connect_timeout))
+            Field(
+                connectTimeout, { connectTimeout = it }, stringResource(R.string.connect_timeout),
+                isError = !connectTimeoutValid,
+                errorText = if (!connectTimeoutValid) stringResource(R.string.connect_timeout_range_error) else null,
+            )
         } else {
             SectionTitle(stringResource(R.string.section_server))
             ServerAddresses(portText = serverPort)
@@ -340,8 +361,16 @@ private fun TransportTab() {
                 isError = !serverPortValid,
                 errorText = if (!serverPortValid) portError else null,
             )
-            Field(maxClients, { maxClients = it }, stringResource(R.string.max_clients))
-            Field(idleTimeout, { idleTimeout = it }, stringResource(R.string.idle_timeout))
+            Field(
+                maxClients, { maxClients = it }, stringResource(R.string.max_clients),
+                isError = !maxClientsValid,
+                errorText = if (!maxClientsValid) stringResource(R.string.max_clients_range_error) else null,
+            )
+            Field(
+                idleTimeout, { idleTimeout = it }, stringResource(R.string.idle_timeout),
+                isError = !idleTimeoutValid,
+                errorText = if (!idleTimeoutValid) stringResource(R.string.idle_timeout_range_error) else null,
+            )
         }
 
         Spacer(Modifier.height(4.dp))
@@ -353,7 +382,7 @@ private fun TransportTab() {
                 TcpService.restart(context)
                 Toast.makeText(context, savedToast, Toast.LENGTH_SHORT).show()
             },
-            enabled = !hasPortError,
+            enabled = formValid,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.Save, null)
@@ -368,6 +397,8 @@ private fun TransportTab() {
                     persistForm()
                     TcpService.start(context)
                 },
+                // Same gate as Save — Start must never run a config the form rejects.
+                enabled = formValid,
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(Icons.Default.PlayArrow, null)
@@ -531,5 +562,7 @@ private fun RepoLink(text: String, onClick: () -> Unit) {
     }
 }
 
-private fun Context.openUrl(url: String) =
-    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+// runCatching: devices without any browser (kiosk / work profile) would otherwise crash here.
+private fun Context.openUrl(url: String) {
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+}

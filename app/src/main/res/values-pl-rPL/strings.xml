@@ -30,6 +30,10 @@
     <string name="max_clients">Maks. liczba klientów</string>
     <string name="idle_timeout">Limit bezczynności klienta (ms, 0 = wył.)</string>
     <string name="port_range_error">Port musi być z zakresu 1–65535</string>
+    <string name="host_required">Podaj adres hosta</string>
+    <string name="connect_timeout_range_error">Wartość z zakresu 500–30000 ms</string>
+    <string name="max_clients_range_error">Wartość z zakresu 1–10</string>
+    <string name="idle_timeout_range_error">Wartość z zakresu 0–300000 ms</string>
 
     <string name="save_settings">Zapisz ustawienia</string>
     <string name="saved_and_restarted">Zapisano i zrestartowano</string>
@@ -49,4 +53,5 @@
     <string name="status_server">Serwer TCP na porcie %1$s</string>
     <string name="status_suffix_connected">%1$s (połączony)</string>
     <string name="status_suffix_waiting">%1$s (oczekuje)</string>
+    <string name="status_no_permission">Połączenie z aplikacją główną zerwane — przeinstaluj wtyczkę</string>
 </resources>

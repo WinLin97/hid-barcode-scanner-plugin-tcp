@@ -30,6 +30,10 @@
     <string name="max_clients">Max clients</string>
     <string name="idle_timeout">Client idle timeout (ms, 0 = off)</string>
     <string name="port_range_error">Port must be 1–65535</string>
+    <string name="host_required">Host is required</string>
+    <string name="connect_timeout_range_error">Must be 500–30000 ms</string>
+    <string name="max_clients_range_error">Must be 1–10</string>
+    <string name="idle_timeout_range_error">Must be 0–300000 ms</string>
 
     <string name="save_settings">Save settings</string>
     <string name="saved_and_restarted">Saved and restarted</string>
@@ -51,4 +55,5 @@
     <string name="status_server">TCP server on port %1$s</string>
     <string name="status_suffix_connected">%1$s (connected)</string>
     <string name="status_suffix_waiting">%1$s (waiting)</string>
+    <string name="status_no_permission">Link to the core app is broken — reinstall this plugin</string>
 </resources>
