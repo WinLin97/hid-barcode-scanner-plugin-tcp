@@ -59,10 +59,19 @@ class TcpService : Service() {
         private val _status = MutableStateFlow(TransportStatus())
         val status: StateFlow<TransportStatus> = _status.asStateFlow()
 
+        // Remembers an OS-denied foreground start. Without it, the cold process replies IDLE to
+        // every PING and (in the core's picker, which pings every 2s) keeps displacing the BLOCKED
+        // report — the "allow Autostart" remedy would only flash for an instant per heartbeat.
+        @Volatile
+        private var startBlocked = false
+
         // Convenience reads for PluginControlReceiver's health ping (kept as the public surface).
         val isRunning: Boolean get() = _status.value.running
         val statusSummary: String? get() = _status.value.summary
-        val currentState: PluginState get() = _status.value.state
+        val currentState: PluginState
+            get() = _status.value.state.let {
+                if (it == PluginState.IDLE && startBlocked) PluginState.BLOCKED else it
+            }
 
         // Rate limit for the "start blocked" EventLog entry: the core retries every 20s forever,
         // which would flush the 100-entry log with duplicates of the same hint.
@@ -93,6 +102,7 @@ class TcpService : Service() {
             runCatching {
                 if (foreground) ctx.startForegroundService(intent) else ctx.startService(intent)
             }.onFailure { e ->
+                if (foreground) startBlocked = true
                 Log.w(TAG, "Service start blocked (background/OEM restriction): ${e.message}")
                 val now = System.currentTimeMillis()
                 if (now - lastBlockedLogMs > BLOCKED_LOG_INTERVAL_MS) {
@@ -140,6 +150,7 @@ class TcpService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startBlocked = false // a start actually went through — the OS denial is no longer current
         startForeground(NOTIF_ID, buildNotification(statusText()))
 
         when (intent?.action) {
